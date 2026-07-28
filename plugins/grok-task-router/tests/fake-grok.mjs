@@ -35,6 +35,6 @@ for (const flag of ["--tools", "--disallowed-tools"]) {
   }
 }
 console.log(JSON.stringify({
-  result: `模拟 Grok 完成。model=${model}; prompt=${prompt.slice(0, 80)}`,
+  result: `模拟 Grok 完成。model=${model}; proxy=${process.env.HTTPS_PROXY || "none"}; prompt=${prompt.slice(0, 80)}`,
   model,
 }));

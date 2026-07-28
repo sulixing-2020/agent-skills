@@ -18,7 +18,11 @@ await writeFile(join(fixture, "README.md"), "fixture\n");
 
 const server = spawn(process.execPath, [join(root, "mcp", "server.mjs")], {
   cwd: root,
-  env: { ...process.env, GROK_ROUTER_CLI: fake },
+  env: {
+    ...process.env,
+    GROK_ROUTER_CLI: fake,
+    GROK_ROUTER_PROXY: "http://127.0.0.1:7897",
+  },
   stdio: ["pipe", "pipe", "inherit"],
 });
 
@@ -61,6 +65,7 @@ try {
 
   const status = await rpc("tools/call", { name: "grok_router_status", arguments: {} });
   assert.match(status.result.content[0].text, /可用模型：grok-4\.5/);
+  assert.match(status.result.content[0].text, /本地代理：已配置（127\.0\.0\.1:7897；来源：GROK_ROUTER_PROXY）/);
   assert.match(status.result.content[0].text, /OpenCodex：未使用/);
 
   const consult = await rpc("tools/call", {
@@ -69,6 +74,7 @@ try {
   });
   assert.match(consult.result.content[0].text, /请求模型：grok-build-0\.1/);
   assert.match(consult.result.content[0].text, /实际模型：grok-4\.5/);
+  assert.match(consult.result.content[0].text, /proxy=http:\/\/127\.0\.0\.1:7897/);
 
   const delegated = await rpc("tools/call", {
     name: "delegate_to_grok",

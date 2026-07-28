@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { spawn } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { mkdtemp, realpath, stat } from "node:fs/promises";
 import { homedir, platform, tmpdir } from "node:os";
 import { basename, delimiter, dirname, isAbsolute, join, resolve, sep } from "node:path";
@@ -14,6 +15,7 @@ const MAX_STDERR = 300_000;
 const DEFAULT_TIMEOUT = 240_000;
 const SEARCH_TIMEOUT = 600_000;
 const DELEGATE_TIMEOUT = 600_000;
+const DEFAULT_CONFIG_PATH = join(homedir(), ".config", "grok-task-router", "config.json");
 
 const activeRuns = new Map();
 let modelCache = null;
@@ -42,6 +44,59 @@ function cliPath() {
   return process.env.GROK_ROUTER_CLI || join(homedir(), ".grok", "bin", "grok");
 }
 
+function routerConfigPath() {
+  return process.env.GROK_ROUTER_CONFIG || DEFAULT_CONFIG_PATH;
+}
+
+function readRouterConfig() {
+  try {
+    const parsed = JSON.parse(readFileSync(routerConfigPath(), "utf8"));
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      throw new Error("配置文件必须是 JSON 对象");
+    }
+    return parsed;
+  } catch (error) {
+    if (error && error.code === "ENOENT") return {};
+    throw new Error(`无法读取 Grok 路由配置：${error.message}`);
+  }
+}
+
+function parseLocalProxy(value, source) {
+  if (!value) return null;
+  if (typeof value !== "string") throw new Error(`${source} 必须是字符串`);
+  let parsed;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new Error(`${source} 不是有效的代理地址`);
+  }
+  if (!["http:", "https:"].includes(parsed.protocol)) {
+    throw new Error(`${source} 只允许 http 或 https 代理`);
+  }
+  if (parsed.username || parsed.password) {
+    throw new Error(`${source} 不允许包含账号或密码`);
+  }
+  if (!["127.0.0.1", "localhost", "::1"].includes(parsed.hostname)) {
+    throw new Error(`${source} 只允许本机回环地址`);
+  }
+  return { value: parsed.toString().replace(/\/$/, ""), source };
+}
+
+function proxyConfig() {
+  if (process.env.GROK_ROUTER_PROXY) {
+    return parseLocalProxy(process.env.GROK_ROUTER_PROXY, "GROK_ROUTER_PROXY");
+  }
+  const config = readRouterConfig();
+  return parseLocalProxy(config.proxy, routerConfigPath());
+}
+
+function proxyStatus() {
+  const proxy = proxyConfig();
+  if (!proxy) return "本地代理：未配置（仅使用 Codex 继承的网络环境）";
+  const parsed = new URL(proxy.value);
+  return `本地代理：已配置（${parsed.hostname}:${parsed.port || (parsed.protocol === "https:" ? "443" : "80")}；来源：${proxy.source}）`;
+}
+
 function safeEnv() {
   const keys = [
     "HOME",
@@ -62,7 +117,7 @@ function safeEnv() {
     "https_proxy",
     "no_proxy",
   ];
-  return {
+  const environment = {
     ...Object.fromEntries(keys.flatMap((key) => process.env[key] ? [[key, process.env[key]]] : [])),
     GROK_CURSOR_SKILLS_ENABLED: "false",
     GROK_CURSOR_RULES_ENABLED: "false",
@@ -75,6 +130,14 @@ function safeEnv() {
     GROK_CLAUDE_MCPS_ENABLED: "false",
     GROK_CLAUDE_HOOKS_ENABLED: "false",
   };
+  const proxy = proxyConfig();
+  if (proxy) {
+    environment.HTTP_PROXY = proxy.value;
+    environment.HTTPS_PROXY = proxy.value;
+    environment.http_proxy = proxy.value;
+    environment.https_proxy = proxy.value;
+  }
+  return environment;
 }
 
 function stripAnsi(text) {
@@ -430,6 +493,7 @@ async function statusTool() {
     `可用模型：${models.models.join(", ") || "未检测到"}`,
     `默认模型：${DEFAULT_MODEL}`,
     `兼容请求：${BUILD_ALIAS}${models.models.includes(BUILD_ALIAS) ? "（原生可用）" : "（将明确解析到 grok-4.5）"}`,
+    proxyStatus(),
     "认证：官方 Grok CLI OAuth；本插件不读取令牌内容。",
     "OpenCodex：未使用。",
   ].join("\n"));

@@ -11,6 +11,26 @@ node --version
 
 要求 Node.js 18+，并已通过官方 Grok CLI 登录。
 
+## 桌面版 Codex 的本地代理配置（按需）
+
+若终端能访问 Grok、但 Codex 中调用 Skill 出现 DNS 或网络错误，通常是 Codex 桌面进程没有继承终端代理环境。此时可在本机创建配置文件：
+
+```json
+{
+  "proxy": "http://127.0.0.1:7897"
+}
+```
+
+固定位置为：
+
+```text
+~/.config/grok-task-router/config.json
+```
+
+可从插件根目录的 `config.example.json` 复制后按本机代理端口调整。
+
+也可用环境变量 `GROK_ROUTER_PROXY` 临时覆盖。插件只接受 `127.0.0.1`、`localhost` 或 `::1` 的 HTTP/HTTPS 本地代理；不接受含账号密码或远程代理地址。该配置不含 Grok 凭据，也不应提交到 Git。
+
 ## 安装插件
 
 插件安装到个人 marketplace 后执行：
@@ -36,6 +56,8 @@ codex plugin add grok-task-router@personal
 | 变量 | 默认值 | 用途 |
 |---|---|---|
 | `GROK_ROUTER_CLI` | 自动查找 `grok` | 指定官方 CLI 绝对路径 |
+| `GROK_ROUTER_PROXY` | 空 | 临时指定本机 HTTP/HTTPS 代理，优先于本地配置文件 |
+| `GROK_ROUTER_CONFIG` | `~/.config/grok-task-router/config.json` | 指定本地配置文件路径 |
 | `GROK_ROUTER_TIMEOUT_MS` | `240000` | 顾问超时 |
 | `GROK_ROUTER_SEARCH_TIMEOUT_MS` | `600000` | X 搜索超时 |
 | `GROK_ROUTER_DELEGATE_TIMEOUT_MS` | `600000` | 任务交接超时 |
