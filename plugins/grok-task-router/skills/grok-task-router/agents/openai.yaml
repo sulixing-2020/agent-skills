@@ -1,0 +1,12 @@
+interface:
+  display_name: "Grok 任务路由"
+  short_description: "在 Codex 中安全调用或交接任务给 Grok"
+  default_prompt: "使用 $grok-task-router 调用 Grok 顾问，或把一个边界明确的任务交给 Grok。"
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "grok-task-router"
+      description: "通过官方 Grok Build CLI 提供只读咨询、X 搜索和受控任务交接"
+      transport: "stdio"
+policy:
+  allow_implicit_invocation: true

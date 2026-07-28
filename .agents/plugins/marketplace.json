@@ -1,0 +1,20 @@
+{
+  "name": "sulixing-skills",
+  "interface": {
+    "displayName": "Sulixing Skills"
+  },
+  "plugins": [
+    {
+      "name": "grok-task-router",
+      "source": {
+        "source": "local",
+        "path": "./plugins/grok-task-router"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}
