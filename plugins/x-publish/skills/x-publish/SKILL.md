@@ -1,6 +1,6 @@
 ---
 name: x-publish
-description: 把本地 Markdown 长文（含图片/表格按原位置落位）发布为 X (Twitter) Article 草稿。触发词：/x-publish、「发X长文」「把这篇发到X」「publish to X article」。只存草稿绝不发布。适用于任何能跑 shell + 能向浏览器页面注入 JS 的 agent（Claude Code / Codex 等），驱动差异见 drivers/。
+description: 把本地 Markdown 长文（含图片/表格按原位置落位）发布为 X (Twitter) Article 草稿。自然语言直接触发，不需要斜杠命令——任何「把这篇/某文件 发到 X（推特）上」「发 X 长文」「传一篇 X 文章」「这篇 md 发推特长文」「publish to X article」之类的表述都算；/x-publish 也可以。只存草稿绝不发布。适用于任何能跑 shell + 能向浏览器页面注入 JS 的 agent（Claude Code / Codex 等），驱动差异见 drivers/。
 ---
 
 # x-publish — Markdown → X Article 草稿（图片表格原位落地）
