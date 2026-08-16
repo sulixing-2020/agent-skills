@@ -6,6 +6,16 @@
 
 ## 当前模块
 
+### `plugins/x-publish`
+
+把本地 Markdown 长文发布为 X (Twitter) Article 草稿，图片与表格落回原文对应位置：
+
+- 解析层提取「每张图跟在哪段后面」，正文整篇注入 X 编辑器（Draft.js），图片走 X 自带上传管线落到锚点段落后；
+- 表格自动转图片、iPhone 图自动 EXIF 转正压缩、渲染尺寸校验兜底；
+- 只存草稿，发布永远由用户手动；
+- 核心脚本驱动无关：Claude Code（claude-in-chrome）已实测跑通（2026-08-16 CTExcel 长文），Playwright（Codex 用）与 DevTools 手动路径见插件内 `drivers/`。
+- 同步约定：日常使用与迭代以 `/Volumes/GM7/.claude/skills/x-publish/` 为工作副本，验证后同步进本仓库发版。
+
 ### `plugins/grok-task-router`
 
 通过官方 Grok Build CLI 的 OAuth 会话，让 Codex 在不依赖 OpenCodex 的情况下：

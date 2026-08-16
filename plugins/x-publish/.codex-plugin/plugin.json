@@ -1,0 +1,33 @@
+{
+  "name": "x-publish",
+  "version": "1.0.0+verified.20260816",
+  "description": "Publish local Markdown long-form articles to X (Twitter) Articles as drafts, with images and tables landing at their original positions. Draft-only, never auto-publishes.",
+  "author": {
+    "name": "Su Lixing"
+  },
+  "license": "UNLICENSED",
+  "keywords": [
+    "x",
+    "twitter",
+    "articles",
+    "markdown",
+    "publishing",
+    "draftjs"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "X Article Publisher",
+    "shortDescription": "本地 Markdown 长文一键变 X Article 草稿，图片表格原位落地",
+    "longDescription": "解析本地 Markdown（标题/格式/每张图的锚点段落），把正文整篇注入 X 编辑器（Draft.js），调 X 自带上传管线把图片放到对应段落后，渲染尺寸校验兜底。表格自动转图片，iPhone 图自动 EXIF 转正。只存草稿，发布永远由用户手动。核心脚本驱动无关：Claude Code（claude-in-chrome）已实测，Playwright/DevTools 手动路径见 drivers/。",
+    "developerName": "Su Lixing",
+    "category": "Productivity",
+    "capabilities": [
+      "Interactive"
+    ],
+    "defaultPrompt": [
+      "把这篇 markdown 发布到 X Articles（只存草稿）。",
+      "/x-publish 文章路径.md",
+      "检查这篇长文的图片是否都在正确位置。"
+    ]
+  }
+}
