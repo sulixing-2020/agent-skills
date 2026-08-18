@@ -7,8 +7,8 @@ import { homedir, platform, tmpdir } from "node:os";
 import { basename, delimiter, dirname, isAbsolute, join, resolve, sep } from "node:path";
 
 const SERVER_NAME = "grok-task-router";
-const SERVER_VERSION = "0.1.0";
-const DEFAULT_MODEL = "grok-4.5";
+const SERVER_VERSION = "0.2.0";
+const FALLBACK_MODEL = "grok-4.6";
 const BUILD_ALIAS = "grok-build-0.1";
 const MAX_STDOUT = 2_000_000;
 const MAX_STDERR = 300_000;
@@ -92,7 +92,7 @@ function proxyConfig() {
 
 function proxyStatus() {
   const proxy = proxyConfig();
-  if (!proxy) return "本地代理：未配置（仅使用 Codex 继承的网络环境）";
+  if (!proxy) return "本地代理：未配置（使用调用方继承的网络环境）";
   const parsed = new URL(proxy.value);
   return `本地代理：已配置（${parsed.hostname}:${parsed.port || (parsed.protocol === "https:" ? "443" : "80")}；来源：${proxy.source}）`;
 }
@@ -198,39 +198,52 @@ async function run(command, args, options = {}) {
   });
 }
 
-function extractModelIds(output) {
+function extractModelInfo(output) {
   const clean = stripAnsi(output);
   const ids = new Set();
   for (const match of clean.matchAll(/^\s*[*-]\s+([a-z0-9][a-z0-9._-]*)/gim)) ids.add(match[1]);
   const defaultMatch = clean.match(/Default model:\s*([a-z0-9._-]+)/i);
-  if (defaultMatch) ids.add(defaultMatch[1]);
-  return [...ids];
+  const detectedDefault = defaultMatch ? defaultMatch[1] : null;
+  if (detectedDefault) ids.add(detectedDefault);
+  return { models: [...ids], detectedDefault };
 }
 
 async function availableModels(force = false) {
   const now = Date.now();
   if (!force && modelCache && now - modelCache.at < 60_000) return modelCache;
   const result = await run(cliPath(), ["models"], { timeoutMs: 30_000 });
-  modelCache = { at: now, models: extractModelIds(`${result.stdout}\n${result.stderr}`), raw: result.stdout.trim() };
+  const info = extractModelInfo(`${result.stdout}\n${result.stderr}`);
+  modelCache = { at: now, models: info.models, detectedDefault: info.detectedDefault, raw: result.stdout.trim() };
   return modelCache;
 }
 
-async function resolveModel(requested = DEFAULT_MODEL) {
-  if (![DEFAULT_MODEL, BUILD_ALIAS].includes(requested)) {
-    throw new Error(`模型不在白名单中：${requested}`);
-  }
+function getDefaultModel(status) {
+  return status?.detectedDefault || FALLBACK_MODEL;
+}
+
+async function resolveModel(requested) {
   const status = await availableModels();
+  const defaultModel = getDefaultModel(status);
+  if (!requested) requested = defaultModel;
+
+  if (requested === BUILD_ALIAS) {
+    if (status.models.includes(BUILD_ALIAS)) {
+      return { requested, actual: BUILD_ALIAS, compatibility: false, available: status.models };
+    }
+    if (process.env.GROK_ROUTER_STRICT_MODELS !== "1" && status.models.includes(defaultModel)) {
+      return {
+        requested,
+        actual: defaultModel,
+        compatibility: true,
+        available: status.models,
+        note: `${BUILD_ALIAS} 当前未由官方 CLI 暴露，已使用 ${defaultModel} 的构建执行配置。`,
+      };
+    }
+    throw new Error(`当前 Grok 账户不可用模型 ${requested}；可用模型：${status.models.join(", ") || "未检测到"}`);
+  }
+
   if (status.models.includes(requested)) {
     return { requested, actual: requested, compatibility: false, available: status.models };
-  }
-  if (requested === BUILD_ALIAS && process.env.GROK_ROUTER_STRICT_MODELS !== "1" && status.models.includes(DEFAULT_MODEL)) {
-    return {
-      requested,
-      actual: DEFAULT_MODEL,
-      compatibility: true,
-      available: status.models,
-      note: `${BUILD_ALIAS} 当前未由官方 CLI 暴露，已使用 ${DEFAULT_MODEL} 的构建执行配置。`,
-    };
   }
   throw new Error(`当前 Grok 账户不可用模型 ${requested}；可用模型：${status.models.join(", ") || "未检测到"}`);
 }
@@ -271,7 +284,7 @@ async function consult(args, requestId) {
   if (!task) return fail("缺少 task");
   const contextText = String(args.context || "").trim();
   const purpose = ["answer", "review", "challenge"].includes(args.purpose) ? args.purpose : "answer";
-  const model = await resolveModel(args.model || DEFAULT_MODEL);
+  const model = await resolveModel(args.model);
   const isolated = await mkdtemp(join(tmpdir(), "grok-router-consult-"));
   const role = {
     answer: "独立回答问题，明确事实、推断与不确定性。",
@@ -279,7 +292,7 @@ async function consult(args, requestId) {
     challenge: "站在反方进行压力测试，寻找最强反例和失败条件。",
   }[purpose];
   const prompt = [
-    "你是由 Codex 临时调用的外部 Grok 顾问。",
+    "你是被调用方临时调用的外部 Grok 顾问。",
     role,
     "不要声称已读取本地文件、执行命令或搜索网页；本次没有这些权限。",
     `任务：\n${task}`,
@@ -335,7 +348,7 @@ async function searchX(args, requestId) {
   if (!query) return fail("缺少 query");
   const hours = Math.min(720, Math.max(1, Number(args.hours || 48)));
   const limit = Math.min(30, Math.max(1, Number(args.limit || 10)));
-  const model = await resolveModel(args.model || DEFAULT_MODEL);
+  const model = await resolveModel(args.model);
   const isolated = await mkdtemp(join(tmpdir(), "grok-router-search-"));
   const cutoff = new Date(Date.now() - hours * 3_600_000).toISOString();
   const prompt = [
@@ -427,10 +440,10 @@ async function delegate(args, requestId) {
   if (!task) return fail("缺少 task");
   const access = args.access === "edit" ? "edit" : "read_only";
   const workspace = await validateWorkspace(String(args.workspace || ""), access, args.confirm_write);
-  const model = await resolveModel(args.model || BUILD_ALIAS);
+  const model = await resolveModel(args.model || BUILD_ALIAS);  // delegate defaults to BUILD_ALIAS
   const acceptance = String(args.acceptance || "给出完成情况、验证证据和剩余风险。").trim();
   const prompt = [
-    "这是 Codex 交接给你的限定任务。只在指定工作区和授权范围内行动。",
+    "这是调用方交接给你的限定任务。只在指定工作区和授权范围内行动。",
     `任务：\n${task}`,
     `验收标准：\n${acceptance}`,
     access === "read_only"
@@ -487,35 +500,35 @@ async function delegate(args, requestId) {
 async function statusTool() {
   const version = await run(cliPath(), ["version"], { timeoutMs: 15_000 });
   const models = await availableModels(true);
+  const defaultModel = getDefaultModel(models);
   return content([
     `CLI：${cliPath()}`,
     `版本：${version.stdout.trim()}`,
     `可用模型：${models.models.join(", ") || "未检测到"}`,
-    `默认模型：${DEFAULT_MODEL}`,
-    `兼容请求：${BUILD_ALIAS}${models.models.includes(BUILD_ALIAS) ? "（原生可用）" : "（将明确解析到 grok-4.5）"}`,
+    `默认模型：${defaultModel}${models.detectedDefault ? "（自动检测）" : "（回退值）"}`,
+    `兼容请求：${BUILD_ALIAS}${models.models.includes(BUILD_ALIAS) ? "（原生可用）" : `（将解析到 ${defaultModel}）`}`,
     proxyStatus(),
     "认证：官方 Grok CLI OAuth；本插件不读取令牌内容。",
-    "OpenCodex：未使用。",
   ].join("\n"));
 }
 
 const tools = [
   {
     name: "grok_router_status",
-    description: "检查官方 Grok Build CLI、OAuth 登录和当前可用模型，不消耗对话额度。",
+    description: "Check Grok Build CLI status, OAuth login, and available models (no quota consumed).",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
   },
   {
     name: "consult_grok",
-    description: "在隔离环境中调用 Grok 给出独立回答、审查或反方压力测试；不读取本地文件。",
+    description: "Consult Grok in an isolated sandbox for an independent answer, review, or adversarial challenge; no local file access.",
     inputSchema: {
       type: "object",
       properties: {
-        task: { type: "string", minLength: 1, description: "交给 Grok 的明确问题" },
-        context: { type: "string", description: "完成任务所需的最少上下文，不含秘密" },
+        task: { type: "string", minLength: 1, description: "The question or task for Grok" },
+        context: { type: "string", description: "Minimal context needed; no secrets" },
         purpose: { type: "string", enum: ["answer", "review", "challenge"], default: "answer" },
-        model: { type: "string", enum: [DEFAULT_MODEL, BUILD_ALIAS], default: DEFAULT_MODEL },
+        model: { type: "string", description: "Grok model ID (auto-detected from CLI if omitted)" },
       },
       required: ["task"], additionalProperties: false,
     },
@@ -523,14 +536,14 @@ const tools = [
   },
   {
     name: "search_x_with_grok",
-    description: "只开放 Grok 的 X/网页搜索工具，返回带真实链接的公开 X 信息候选。",
+    description: "Search public X posts via Grok's X/web search tools; returns candidates with real links.",
     inputSchema: {
       type: "object",
       properties: {
         query: { type: "string", minLength: 1 },
         hours: { type: "number", minimum: 1, maximum: 720, default: 48 },
         limit: { type: "integer", minimum: 1, maximum: 30, default: 10 },
-        model: { type: "string", enum: [DEFAULT_MODEL, BUILD_ALIAS], default: DEFAULT_MODEL },
+        model: { type: "string", description: "Grok model ID (auto-detected from CLI if omitted)" },
       },
       required: ["query"], additionalProperties: false,
     },
@@ -538,16 +551,16 @@ const tools = [
   },
   {
     name: "delegate_to_grok",
-    description: "把限定的项目分析或编辑任务交给 Grok Build；编辑需要显式确认并受工作区沙箱约束。",
+    description: "Delegate a bounded project analysis or editing task to Grok Build; editing requires explicit confirmation and workspace sandbox.",
     inputSchema: {
       type: "object",
       properties: {
         task: { type: "string", minLength: 1 },
-        workspace: { type: "string", minLength: 1, description: "目标项目绝对路径" },
+        workspace: { type: "string", minLength: 1, description: "Absolute path to target project" },
         access: { type: "string", enum: ["read_only", "edit"], default: "read_only" },
-        acceptance: { type: "string", description: "验收标准" },
+        acceptance: { type: "string", description: "Acceptance criteria" },
         confirm_write: { type: "boolean", default: false },
-        model: { type: "string", enum: [DEFAULT_MODEL, BUILD_ALIAS], default: BUILD_ALIAS },
+        model: { type: "string", description: "Grok model ID (defaults to grok-build-0.1 or CLI default)" },
       },
       required: ["task", "workspace"], additionalProperties: false,
     },

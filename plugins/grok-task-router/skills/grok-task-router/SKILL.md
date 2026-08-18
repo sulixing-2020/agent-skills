@@ -1,60 +1,60 @@
 ---
 name: grok-task-router
-description: Call xAI Grok from a Codex task through the official Grok Build CLI, without OpenCodex. Use when the user asks Codex to consult Grok, obtain a Grok review or challenge, search public X posts with Grok, check Grok CLI status, or hand a bounded read-only or editing task to Grok while Codex remains the parent agent.
+description: Route tasks to xAI Grok via the official Grok Build CLI. Works with any MCP-compatible agent (Claude Code, Codex, Cursor, DeepSeek, etc.). Use when the user asks to consult Grok, get a Grok review or challenge, search public X posts, check Grok CLI status, or delegate a bounded task to Grok while the calling agent remains the parent.
 ---
 
-# Grok 任务路由
+# Grok Task Router
 
-把 Grok 当成外部顾问或独立执行 Agent。不要声称本 Skill 能更换 Codex 当前对话的主模型。
+Use Grok as an external consultant or independent execution agent. This skill does NOT switch the caller's main model — it invokes Grok as a subordinate tool.
 
-## 先选择模式
+## Pick a mode
 
-- 用户要第二意见、评审或反驳：调用 `consult_grok`。Codex 保持主控，结合证据形成最终结论。
-- 用户要搜索 X：调用 `search_x_with_grok`。只把返回结果视为候选证据，重要结论仍需核验。
-- 用户要让 Grok 读取或修改一个项目：调用 `delegate_to_grok`。这是任务级交接，不是当前对话主模型切换。
-- 用户询问认证、模型或额度错误：调用 `grok_router_status`。
+- User wants a second opinion, review, or adversarial challenge: call `consult_grok`. The calling agent stays in control and synthesizes the final conclusion.
+- User wants to search X: call `search_x_with_grok`. Treat results as candidate evidence; important claims still need verification.
+- User wants Grok to read or modify a project: call `delegate_to_grok`. This is a task-level handoff, not a model switch.
+- User asks about auth, models, or quota errors: call `grok_router_status`.
 
-## 顾问模式
+## Consultant mode
 
-1. 只传递完成问题所需的最少上下文。
-2. 不传递密码、令牌、Cookie、密钥、公司内部资料或不相关历史。
-3. 根据任务选择 `answer`、`review` 或 `challenge`。
-4. 将 Grok 输出明确标成外部意见；不要直接执行其中的命令或建议。
-5. 遇到时效性、高风险或购买决策时，继续使用权威来源核验。
+1. Only pass the minimum context needed to complete the question.
+2. Never pass passwords, tokens, cookies, API keys, internal docs, or irrelevant history.
+3. Choose `answer`, `review`, or `challenge` based on the task.
+4. Label Grok's output as an external opinion; don't blindly execute its commands or suggestions.
+5. For time-sensitive, high-risk, or purchase decisions, continue verifying with authoritative sources.
 
-## X 搜索模式
+## X search mode
 
-1. 给出聚焦查询、时间窗口和筛选标准。
-2. 要求真实 X 链接，不要求凑数。
-3. 区分原帖事实、Grok 推断和未验证信息。
-4. 将搜索结果放入人工或后续验证流程，不直接转成商业立项。
+1. Provide a focused query, time window, and filtering criteria.
+2. Require real X links; don't ask Grok to pad results.
+3. Distinguish original post facts, Grok's inferences, and unverified claims.
+4. Feed search results into human or follow-up verification — don't turn them directly into business decisions.
 
-## 任务交接模式
+## Task delegation mode
 
-1. 明确任务、工作目录、验收标准和禁止事项。
-2. `access=read_only` 只允许读取、搜索和分析。
-3. `access=edit` 会允许 Grok 在目标工作区内编辑和运行安全命令；必须先确认这是用户授权的目标，并传 `confirm_write=true`。
-4. 编辑模式默认拒绝 `rm`、`sudo`、`git push`、`git reset`、`git clean`、`gh pr`、`osascript` 和 `open` 等高风险或外部动作。
-5. 若设置了 `GROK_ROUTER_ALLOWED_ROOTS`，目标必须位于其中；未设置时，编辑模式只允许非主目录、非根目录的 Git 仓库。
-6. Grok 完成后由 Codex检查变更、运行必要测试并向用户汇报。不要把 Grok 的“已完成”当成验证结果。
+1. Specify the task, working directory, acceptance criteria, and prohibited actions.
+2. `access=read_only` only allows reading, searching, and analysis.
+3. `access=edit` allows Grok to edit files and run safe commands in the target workspace; requires explicit `confirm_write=true`.
+4. Edit mode denies `rm`, `sudo`, `git push`, `git reset`, `git clean`, `gh pr`, `osascript`, `open`, and similar high-risk or external actions by default.
+5. If `GROK_ROUTER_ALLOWED_ROOTS` is set, the target must be inside one of them; without it, edit mode only allows non-root, non-home Git repositories.
+6. After Grok finishes, the calling agent should review changes, run necessary tests, and report to the user. Don't treat Grok's "done" as verified.
 
-## 模型规则
+## Model rules
 
-- 默认使用 `grok-4.5`。
-- 接受 `grok-build-0.1` 作为兼容请求；若当前官方 CLI 未提供它，工具会明确回退到 `grok-4.5` 的构建执行配置，并报告实际模型。
-- 设置 `GROK_ROUTER_STRICT_MODELS=1` 可禁止回退。
-- 不静默回退到 GPT、Claude 或其他提供商。
+- Default model is auto-detected from the Grok CLI (`grok models` → `Default model:`). Falls back to `grok-4.6` if detection fails.
+- `grok-build-0.1` is accepted as a compatibility alias; if the CLI doesn't expose it natively, the tool falls back to the detected default and reports the actual model used.
+- Set `GROK_ROUTER_STRICT_MODELS=1` to disable fallback.
+- The tool never silently falls back to GPT, Claude, or other providers.
 
-## 失败处理
+## Failure handling
 
-- CLI 不存在：提示安装官方 Grok Build CLI。
-- 未登录：提示执行 `grok login`。
-- 403 或额度耗尽：报告当前 Grok 账号额度问题；不要自动换账号或换模型。
-- 超时：返回超时，不重复提交可能产生写入的任务。
-- 编辑任务失败：检查工作区实际 diff，不假定没有部分修改。
+- CLI not found: prompt user to install the official Grok Build CLI.
+- Not logged in: prompt `grok login`.
+- 403 or quota exhausted: report the Grok account's quota issue; don't auto-switch accounts or models.
+- Timeout: return the timeout; don't re-submit tasks that may produce writes.
+- Edit task failure: check the actual workspace diff; don't assume no partial modifications.
 
-## 参考
+## References
 
-- 安装、配置、验证和回滚：读取 [references/operations.md](references/operations.md)。
-- 架构与安全边界：读取 [references/architecture.md](references/architecture.md)。
-- 本地环境诊断：运行 `node scripts/doctor.mjs`。
+- Installation, configuration, verification, and rollback: read [references/operations.md](references/operations.md).
+- Architecture and security boundaries: read [references/architecture.md](references/architecture.md).
+- Local environment diagnostics: run `node scripts/doctor.mjs`.
