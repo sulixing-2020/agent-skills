@@ -7,7 +7,6 @@
  * 技法来源（均为实测验证）：
  * - React Fiber 攀爬 + Draft.js 状态写入 + onFilesAdded 上传：
  *   改写自 punk2898/x-article-publisher (MIT) 与 xPoster 技法
- * - 渲染尺寸身份校验 / 全量重排：2026-08-16 CTExcel 长文实战沉淀
  *
  * 用法（按顺序）：
  *   1. 整个文件 eval 一次 → window.XA 就绪
